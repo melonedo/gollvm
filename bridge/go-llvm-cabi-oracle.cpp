@@ -16,6 +16,8 @@
 #include "llvm/IR/DataLayout.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include "CallingConv.h"
+
 //......................................................................
 
 // Given an LLVM type, classify it according to whether it would
@@ -146,20 +148,23 @@ EightByteInfo::EightByteInfo(Btype *bt, TypeManager *tmgr)
     : typeManager_(tmgr)
 {
   explode(bt);
-  llvm::CallingConv::ID cconv = tmgr->callingConv();
+  gollvm::driver::CallingConvId cconv = tmgr->callingConv();
   switch (cconv) {
-  case llvm::CallingConv::X86_64_SysV:
+  case gollvm::driver::CallingConvId::X86_64_SysV:
     determineABITypesForX86_64_SysV();
     break;
-  case llvm::CallingConv::ARM_AAPCS:
+  case gollvm::driver::CallingConvId::ARM_AAPCS:
     setHFA();
     if (getHFA().number == 0 && tmgr->typeSize(bt) <= 16) {
       // For HFA and indirect cases, we don't need do this.
       determineABITypesForARM_AAPCS();
     }
     break;
+  case gollvm::driver::CallingConvId::RISCV64_C:
+    determineABITypesForRISC_V();
+    break;
   default:
-    llvm::errs() << "unsupported llvm::CallingConv::ID " << cconv << "\n";
+    llvm::errs() << "unsupported gollvm::driver::CallingConvId " << static_cast<int>(cconv) << "\n";
     break;
   }
 }
@@ -544,18 +549,22 @@ class ABIState {
 public:
   ABIState(TypeManager *typm) : argCount_(0) {
     assert(typm != nullptr);
-    llvm::CallingConv::ID cconv = typm->callingConv();
+    gollvm::driver::CallingConvId cconv = typm->callingConv();
     switch (cconv) {
-    case llvm::CallingConv::X86_64_SysV:
+    case gollvm::driver::CallingConvId::X86_64_SysV:
       availIntRegs_ = 6;
       availSSERegs_ = 8;
       break;
-    case llvm::CallingConv::ARM_AAPCS:
+    case gollvm::driver::CallingConvId::ARM_AAPCS:
       availIntRegs_ = 8;
       availSIMDFPRegs_ = 8;
       break;
+    case gollvm::driver::CallingConvId::RISCV64_C:
+      availIntRegs_ = 8;
+      availFloatRegs_ = 8;
+      break;
     default:
-      llvm::errs() << "unsupported llvm::CallingConv::ID " << cconv << "\n";
+      llvm::errs() << "unsupported gollvm::driver::CallingConvId " << static_cast<int>(cconv) << "\n";
       break;
     }
   }
@@ -610,7 +619,7 @@ CABIOracle::CABIOracle(const std::vector<Btype *> &fcnParamTypes,
     , fcnTypeForABI_(nullptr)
     , typeManager_(typeManager)
     , followsCabi_(followsCabi)
-    , ccID_(llvm::CallingConv::MaxID)
+    , ccID_(gollvm::driver::CallingConvId::MaxID)
     , cc_(nullptr)
 {
   setCC();
@@ -624,7 +633,7 @@ CABIOracle::CABIOracle(BFunctionType *ft,
     , fcnTypeForABI_(nullptr)
     , typeManager_(typeManager)
     , followsCabi_(ft->followsCabi())
-    , ccID_(llvm::CallingConv::MaxID)
+    , ccID_(gollvm::driver::CallingConvId::MaxID)
     , cc_(nullptr)
 {
   setCC();
@@ -637,20 +646,24 @@ void CABIOracle::setCC()
   ccID_ = typeManager_->callingConv();
   // Supported architectures at present.
   assert(ccID_ == llvm::CallingConv::X86_64_SysV ||
-         ccID_ == llvm::CallingConv::ARM_AAPCS);
+         ccID_ == llvm::CallingConv::ARM_AAPCS ||
+         ccID_ == llvm::CallingConv::C);
 
   if (cc_ != nullptr) {
     return;
   }
   switch (ccID_) {
-  case llvm::CallingConv::X86_64_SysV:
+  case gollvm::driver::CallingConvId::X86_64_SysV:
     cc_ = std::unique_ptr<CABIOracleArgumentAnalyzer>(new CABIOracleX86_64_SysV(typeManager_));
     break;
-  case llvm::CallingConv::ARM_AAPCS:
+  case gollvm::driver::CallingConvId::ARM_AAPCS:
     cc_ = std::unique_ptr<CABIOracleArgumentAnalyzer>(new CABIOracleARM_AAPCS(typeManager_));
     break;
+  case gollvm::driver::CallingConvId::RISCV64_C:
+    cc_ = std::unique_ptr<CABIOracleArgumentAnalyzer>( new CABIOracleRISC_V(typeManager_));
+    break;
   default:
-    llvm::errs() << "unsupported llvm::CallingConv::ID " << ccID_ << "\n";
+    llvm::errs() << "unsupported gollvm::driver::CallingConvId " << static_cast<int>(ccID_) << "\n";
     break;
   }
 }
