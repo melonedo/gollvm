@@ -218,7 +218,7 @@ void EightByteInfo::addLeafTypes(Btype *bt,
     for (unsigned fidx = 0; fidx < 2; ++fidx) {
       Btype *leaf = tm()->floatType(bits);
       unsigned foff = tm()->typeFieldOffset(bct, fidx);
-      leaves->push_back(std::make_pair(leaf, foff));
+      leaves->push_back(std::make_pair(leaf, offset + foff));
     }
     return;
   }
